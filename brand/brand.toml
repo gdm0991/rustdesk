@@ -1,0 +1,69 @@
+# ============================================================================
+# brand.toml — единственный источник истины по ребрендингу RustDesk -> DugaDesk
+# ----------------------------------------------------------------------------
+# Все параметры продукта собраны здесь. apply.py читает ТОЛЬКО этот файл и
+# подставляет значения в рабочее дерево форка.
+#
+# Правило: если понадобилось поменять имя, домен, ключ или версию — правим
+# ЗДЕСЬ и заново прогоняем `python3 brand/apply.py --apply`. Ничего руками
+# в дереве не правим, иначе следующий merge с апстримом затрёт правку молча.
+# ============================================================================
+
+[brand]
+
+# Отображаемое имя приложения. Оно же попадает в hbb_common APP_NAME.
+# ВАЖНО: как только APP_NAME != "RustDesk", в коде включается is_custom_client(),
+# что меняет часть логики UI (скрывает карточки обновления, меняет ссылки).
+app_name = "DugaDesk"
+
+# Организация: hbb_common ORG. Из неё строится путь к конфигу пользователя
+# (%APPDATA%\<ORG>\<APP_NAME> на Windows, ~/.config/<app_name> на Linux).
+# Смена ORG = смена каталога конфигов, старые настройки пользователя не подхватятся.
+org = "pw.duga"
+
+# Имя исполняемого файла / пакета / службы в нижнем регистре.
+# Используется в именах: dugadesk.service, dugadesk.desktop, /usr/share/dugadesk,
+# /etc/pam.d/dugadesk, имена артефактов CI.
+bin = "dugadesk"
+
+# URI-схема для deep-link (dugadesk://...). Должна совпадать с MimeType в
+# res/<bin>-link.desktop и с android:scheme в AndroidManifest.xml.
+scheme = "dugadesk"
+
+# Адрес собственного rendezvous-сервера (hbb_common RENDEZVOUS_SERVERS).
+# Это ДЕФОЛТ, а не жёсткая привязка: приоритет в get_rendezvous_server() —
+# EXE_RENDEZVOUS_SERVER -> опция custom-rendezvous-server -> PROD_RENDEZVOUS_SERVER
+# -> CONFIG2 -> константа. Константа последняя, поэтому поле настроек у
+# пользователя продолжает работать и перекрывает вшитое значение.
+rendezvous = "rustdesk.duga.pw"
+
+# Публичный ключ сервера (hbb_common RS_PUB_KEY). Тот же принцип: дефолт,
+# перекрываемый настройками. Если ключ не совпадёт с ключом сервера —
+# клиент не сможет установить защищённое соединение.
+pubkey = "rNXmVUmSpWLt1NLXGqYIh+O3fMAk1h+MWDvJbisdi3E="
+
+# Продуктовая версия — ТОЛЬКО для имён выходных артефактов CI.
+# Внутреннюю переменную VERSION в flutter-build.yml не трогаем: от неё зависят
+# имена промежуточных файлов, которые порождают build.py / rpmbuild / makepkg.
+product_version = "1.0.0"
+
+# Домен продукта. Заменяет rustdesk.com в ссылках интерфейса.
+domain = "duga.pw"
+
+# applicationId Android-пакета (build.gradle). ВНИМАНИЕ: это НЕ то же самое,
+# что package="com.carriez.flutter_hbb" в AndroidManifest.xml — тот привязан
+# к именам Kotlin-классов и НЕ меняется.
+android_app_id = "pw.duga.dugadesk"
+
+# Bundle identifier для macOS (flutter/macos/.../AppInfo.xcconfig).
+macos_bundle_id = "pw.duga.dugadesk"
+
+# Идентификатор Flatpak-приложения. Имя файла манифеста метаданных обязано
+# совпадать с этим идентификатором, иначе flatpak-builder ругается.
+flatpak_id = "pw.duga.DugaDesk"
+
+# APPLICATION_ID для GTK-приложения на Linux (flutter/linux/CMakeLists.txt).
+linux_app_id = "pw.duga.DugaDesk"
+
+# Копирайт/производитель — попадает в ресурсы Windows-бинаря и в MSI.
+company = "Duga"

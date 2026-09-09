@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=DugaDesk
+NoDisplay=true
+MimeType=x-scheme-handler/dugadesk;
+TryExec=dugadesk
+Exec=dugadesk %u
+Icon=dugadesk
+Terminal=false
+Type=Application
+StartupNotify=false
+StartupWMClass=dugadesk

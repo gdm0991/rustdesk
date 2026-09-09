@@ -1,9 +1,15 @@
 name: Flutter Nightly Build
 
 on:
-  schedule:
-    # schedule build every night
-    - cron: "0 0 * * *"
+  # РЕБРЕНДИНГ: ночные сборки по расписанию отключены.
+  # Поток чужих PR нулевой, дерево меняется по событию, а не по
+  # расписанию; каждая ночь перезаписывала бы релиз nightly и жгла
+  # квоту Actions (macOS тарифицируется 10x, Windows 2x), а падение
+  # после merge апстрима случалось бы в 00:00 без свидетелей.
+  # Чтобы вернуть расписание — снять решётки с трёх строк ниже.
+  # schedule:
+  #   # schedule build every night
+  #   - cron: "0 0 * * *"
   workflow_dispatch:
 
 jobs:

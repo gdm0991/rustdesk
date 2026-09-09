@@ -56,3 +56,11 @@ vcpkg_installed
 flutter/lib/generated_plugin_registrant.dart
 libsciter.dylib
 flutter/web/
+
+# === Слой ребрендинга DugaDesk (brand/apply.py) ===
+# Выше стоят правила *png / *svg / *jpg. Без отрицаний ниже
+# `git add` молча пропустил бы иконки бренда, и сборка вышла бы
+# со старой иконкой RustDesk — без единого сообщения об ошибке.
+!brand/assets/**
+!flutter/assets/icon.png
+!flutter/assets/logo.png

@@ -3737,14 +3737,17 @@ Color? disabledTextColor(BuildContext context, bool enabled) {
 }
 
 Widget loadPowered(BuildContext context) {
-  if (bind.mainGetBuildinOption(key: "hide-powered-by-me") == 'Y') {
+  // РЕБРЕНДИНГ DugaDesk: надпись "Powered by ..." скрыта безусловно.
+  // Штатная опция hide-powered-by-me живёт в custom.txt, а он
+  // проверяется подписью чужим ключом — поэтому условие заменено на true.
+  if (true) {
     return SizedBox.shrink();
   }
   return MouseRegion(
     cursor: SystemMouseCursors.click,
     child: GestureDetector(
       onTap: () {
-        launchUrl(Uri.parse('https://rustdesk.com'));
+        launchUrl(Uri.parse('https://duga.pw'));
       },
       child: Opacity(
           opacity: 0.5,

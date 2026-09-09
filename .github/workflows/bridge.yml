@@ -39,6 +39,23 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Применить слой ребрендинга DugaDesk
+        # libs/hbb_common — git-подмодуль ЧУЖОГО репозитория
+        # (rustdesk/hbb_common). Его правки невозможно закоммитить в наш
+        # репозиторий: git хранит только указатель на ревизию, поэтому после
+        # checkout подмодуль всегда приезжает с апстрим-пина — APP_NAME="RustDesk",
+        # сервер rs-ny.rustdesk.com и чужой публичный ключ.
+        # Без этого шага релиз соберётся под именем RustDesk и уйдёт на чужой
+        # сервер, а обнаружится это только на готовом релизе (1 ч 40 мин сборки).
+        # Остальное дерево уже применено в коммите — прогон его не меняет.
+        shell: bash
+        run: |
+          # На windows-раннере в git-bash есть python3 (этот же workflow уже
+          # вызывает им res/job.py и libs/portable/generate.py), но берём
+          # python как запасной вариант, чтобы шаг не зависел от образа.
+          if command -v python3 >/dev/null 2>&1; then PY=python3; else PY=python; fi
+          "$PY" brand/apply.py --apply
+
       - name: Install prerequisites
         run: |
           sudo apt-get install ca-certificates -y
