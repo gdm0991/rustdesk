@@ -43,6 +43,56 @@ import re
 import shutil
 import sys
 
+
+# ---------------------------------------------------------------------------
+# Кодировка вывода
+# ---------------------------------------------------------------------------
+# ЗАЧЕМ ЭТО ПЕРВЫМ ДЕЛОМ, ДО ЛЮБОЙ ПЕЧАТИ.
+#
+# Весь вывод скрипта — русский. На Linux и macOS stdout по умолчанию UTF-8, и
+# всё печатается. На windows-раннере GitHub Actions Python берёт кодировку из
+# кодовой страницы консоли — cp1252, в которой кириллицы нет вообще. Первая же
+# строка заголовка валит процесс:
+#
+#   File ".../brand/apply.py", line ..., in run_pass
+#       print(u"  %s" % title)
+#   UnicodeEncodeError: 'charmap' codec can't encode characters ...
+#
+# Так упала сборка Windows в прогоне #63: шаг «Применить слой ребрендинга»
+# умер за 1 секунду, а вместе с ним — обе Windows-сборки и час ожидания.
+#
+# Лечим перенастройкой самих потоков: errors="replace" гарантирует, что даже
+# самый экзотический терминал не уронит процесс — в худшем случае отдельные
+# символы станут "?", но скрипт доработает и вернёт честный код возврата.
+# Молчать нельзя: без вывода не видно, какие якоря не нашлись.
+#
+# reconfigure() есть с Python 3.7 и только у текстовых потоков. Под
+# перенаправлением в файл, в отладчике или в старом Python его может не быть —
+# тогда просто работаем как раньше, поэтому try/except, а не проверка версии.
+def _force_utf8_output():
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None:
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            # Поток не умеет reconfigure (обёртка, не-TextIO, старый Python).
+            # Пробуем пересоздать обёртку поверх бинарного буфера.
+            try:
+                buffer = getattr(stream, "buffer", None)
+                if buffer is not None:
+                    setattr(sys, stream_name,
+                            io.TextIOWrapper(buffer, encoding="utf-8",
+                                             errors="replace", line_buffering=True))
+            except Exception:
+                # Совсем экзотика: оставляем как есть. Скрипт всё равно
+                # отработает, а печать в худшем случае потеряет часть символов.
+                pass
+
+
+_force_utf8_output()
+
 # ---------------------------------------------------------------------------
 # Разбор brand.toml
 # ---------------------------------------------------------------------------
@@ -1271,6 +1321,13 @@ def build_rules(b, assets_dir):
         u"        # сервер, а обнаружится это только на готовом релизе (1 ч 40 мин сборки).",
         u"        # Остальное дерево уже применено в коммите — прогон его не меняет.",
         u"        shell: bash",
+        u"        env:",
+        u"          # Второй пояс к перенастройке потоков внутри apply.py.",
+        u"          # На windows-раннере stdout питона по умолчанию cp1252, и печать",
+        u"          # русских заголовков валит шаг с UnicodeEncodeError за 1 секунду —",
+        u"          # именно так упали обе Windows-сборки в прогоне #63.",
+        u"          PYTHONUTF8: \"1\"",
+        u"          PYTHONIOENCODING: \"utf-8\"",
         u"        run: |",
         u"          # На windows-раннере в git-bash есть python3 (этот же workflow уже",
         u"          # вызывает им res/job.py и libs/portable/generate.py), но берём",
@@ -1634,6 +1691,35 @@ def build_rules(b, assets_dir):
                  u"копирайт и ни слова о том, что это %s. Строка захардкожена, "
                  u"через translate() не проходит. Копирайт первоисточника "
                  u"сохранён: этого требует AGPL." % APP, S))
+
+    # --- 14.11 Кодировка вывода в шаге CI ------------------------------
+    # Шаг «Применить слой ребрендинга» вставляется правилом 12 и в уже
+    # закоммиченном дереве стоит в старом виде — без env. Правило 12
+    # идемпотентно и такой шаг не трогает, поэтому обновляем его отдельно.
+    # На чистом дереве правило 12 вставит шаг сразу с env, и это правило
+    # опознает результат по маркеру.
+    STEP_ENV_OLD = (u"        shell: bash\n"
+                    u"        run: |\n"
+                    u"          # На windows-раннере в git-bash есть python3")
+    STEP_ENV_NEW = (u"        shell: bash\n"
+                    u"        env:\n"
+                    u"          # Второй пояс к перенастройке потоков внутри apply.py.\n"
+                    u"          # На windows-раннере stdout питона по умолчанию cp1252, и печать\n"
+                    u"          # русских заголовков валит шаг с UnicodeEncodeError за 1 секунду —\n"
+                    u"          # именно так упали обе Windows-сборки в прогоне #63.\n"
+                    u"          PYTHONUTF8: \"1\"\n"
+                    u"          PYTHONIOENCODING: \"utf-8\"\n"
+                    u"        run: |\n"
+                    u"          # На windows-раннере в git-bash есть python3")
+    R.append(Sub(YML, STEP_ENV_OLD, STEP_ENV_NEW, 5,
+                 u"Без PYTHONUTF8/PYTHONIOENCODING шаг зависит только от "
+                 u"reconfigure() внутри скрипта. Два независимых пояса нужны "
+                 u"потому, что цена ошибки — упавшая Windows-сборка через "
+                 u"20 секунд и потерянный час.", S,
+                 marker=u"PYTHONIOENCODING: \"utf-8\""))
+    R.append(Sub(".github/workflows/bridge.yml", STEP_ENV_OLD, STEP_ENV_NEW, 1,
+                 u"То же для генерации bridge.", S,
+                 marker=u"PYTHONIOENCODING: \"utf-8\""))
 
     return R
 
