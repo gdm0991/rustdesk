@@ -1165,6 +1165,20 @@ def build_rules(b, assets_dir):
          u"Логотип на стартовом экране."),
         ("mac-icon.png", "res/mac-icon.png",
          u"Исходник иконки macOS."),
+        # Иконка в строке меню macOS. Читается ровно одна:
+        # src/tray.rs:36 делает include_bytes!("../res/mac-tray-dark-x2.png")
+        # с пометкой «use as template, so color is not important» — macOS в
+        # шаблонном режиме берёт только альфу и перекрашивает силуэт под тему.
+        # Поэтому нужен монохромный силуэт на прозрачном фоне; цветная иконка
+        # там превратится в сплошной квадрат.
+        ("mac-tray-dark-x2.png", "res/mac-tray-dark-x2.png",
+         u"Иконка в строке меню macOS — единственная, которую читает код "
+         u"(src/tray.rs, include_bytes!). Без замены в меню-баре висит "
+         u"кольцо RustDesk всё время работы службы."),
+        ("mac-tray-light-x2.png", "res/mac-tray-light-x2.png",
+         u"Светлый вариант той же иконки. Лежит в дереве апстрима, но ни "
+         u"одной строкой кода не читается — заменяем, чтобы в репозитории "
+         u"не осталось чужой графики."),
         ("AppIcon.icns", "flutter/macos/Runner/AppIcon.icns",
          u"Иконка macOS-бандла. ВНИМАНИЕ: в этом дереве иконка лежит одним "
          u"файлом .icns, каталога Assets.xcassets/AppIcon.appiconset нет."),
@@ -1177,9 +1191,13 @@ def build_rules(b, assets_dir):
          u"Иконка 256x256 — её build.py кладёт в hicolor как %s.png." % BIN),
     ]
     ANDROID_DPI = ("mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi")
+    # ic_stat_logo — иконка в строке состояния Android. Её видно всё время,
+    # пока работает служба. Android красит её сам (setSmallIcon, R.mipmap.
+    # ic_stat_logo в MainService.kt), поэтому файл обязан быть монохромным
+    # силуэтом на прозрачном фоне: цветная картинка станет белым пятном.
     for dpi in ANDROID_DPI:
         for name in ("ic_launcher.png", "ic_launcher_round.png",
-                     "ic_launcher_foreground.png"):
+                     "ic_launcher_foreground.png", "ic_stat_logo.png"):
             ICONS.append((
                 "android/mipmap-%s/%s" % (dpi, name),
                 "flutter/android/app/src/main/res/mipmap-%s/%s" % (dpi, name),
@@ -1509,10 +1527,15 @@ def build_rules(b, assets_dir):
     # PRODUCT_BUNDLE_IDENTIFIER, заданный на уровне таргета в pbxproj,
     # ПЕРЕКРЫВАЕТ значение из xcconfig. Доказательство прямо в апстриме:
     # xcconfig говорит com.carriez.flutterHbb, а собранный RustDesk.app имеет
-    # id com.carriez.rustdesk. Из bundle id строятся имена LaunchDaemon и
-    # LaunchAgent (src/platform/macos.rs), поэтому без этой правки служба
-    # называется com.carriez.rustdesk*, а разрешения macOS (экран, спец.
-    # возможности) делятся с установленным рядом RustDesk.
+    # id com.carriez.rustdesk.
+    # ВНИМАНИЕ (исправление прежней неверной записи): имена LaunchDaemon и
+    # LaunchAgent строятся НЕ из bundle id, а из ORG — см. get_full_name()
+    # в src/common.rs (format!("{}.{}", ORG, APP_NAME)) и Config::path()
+    # в hbb_common (ProjectDirs::from("", ORG, APP_NAME)). Bundle id влияет
+    # на другое: запись разрешений macOS (экран, специальные возможности),
+    # ключ AssociatedBundleIdentifiers в plist и подстановку
+    # com.carriez.rustdesk в correct_app_name(). За имена службы и каталог
+    # настроек отвечает правило 14.12 ниже.
     R.append(Sub("flutter/macos/Runner.xcodeproj/project.pbxproj",
                  "PRODUCT_BUNDLE_IDENTIFIER = com.carriez.rustdesk;",
                  "PRODUCT_BUNDLE_IDENTIFIER = %s;" % MBID, 3,
@@ -1720,6 +1743,70 @@ def build_rules(b, assets_dir):
     R.append(Sub(".github/workflows/bridge.yml", STEP_ENV_OLD, STEP_ENV_NEW, 1,
                  u"То же для генерации bridge.", S,
                  marker=u"PYTHONIOENCODING: \"utf-8\""))
+
+    # --- 14.12 БЛОКЕР macOS: служба ставится под чужим именем ----------
+    # Найдено приёмкой на живых артефактах сборки #64.
+    #
+    # Что происходило:
+    #   * is_installed_daemon() (src/platform/macos.rs) ищет файл
+    #     /Library/LaunchDaemons/{get_full_name()}_service.plist, а
+    #     get_full_name() = "{ORG}.{APP_NAME}" -> pw.duga.DugaDesk_service.plist;
+    #   * privileges_scripts/install.scpt перед запуском пропускается через
+    #     correct_app_name(), который подменяет только "com.carriez.rustdesk"
+    #     (полный bundle id), "rustdesk" и "RustDesk". Строка
+    #     "com.carriez.RustDesk_service.plist" под первую замену не подходит
+    #     (там RustDesk с заглавными), поэтому получалось
+    #     com.carriez.DugaDesk_service.plist;
+    #   * итог: служба ставится под одним именем, приложение ищет под другим.
+    #     is_installed_daemon() возвращает false, uninstall_service() выходит
+    #     по `return false` — служба не удаляется и не управляется из UI.
+    #   * тем же промахом install.scpt копировал конфиг из
+    #     ~/Library/Preferences/com.carriez.DugaDesk/, тогда как реальный
+    #     каталог — ~/Library/Preferences/pw.duga.DugaDesk/ (Config::path ->
+    #     ProjectDirs::from("", ORG, APP_NAME) + patch("Application Support"
+    #     -> "Preferences")). ID и настройки не переносились в root-демон.
+    #
+    # ПОЧЕМУ ПРАВИМ correct_app_name, А НЕ САМИ .scpt/.plist:
+    #   * correct_app_name вызывается РОВНО для privileges_scripts и больше
+    #     нигде — проверено: 7 вызовов в macos.rs (install.scpt, uninstall.scpt,
+    #     update.scpt, daemon.plist, agent.plist), других мест нет. Значит
+    #     расширение подстановки ничего постороннего не заденет;
+    #   * это один якорь вместо правок в пяти файлах, и любой новый скрипт,
+    #     который апстрим добавит в privileges_scripts, будет покрыт сразу;
+    #   * замена ставится ПОСЛЕ подстановки bundle id, поэтому строка
+    #     AssociatedBundleIdentifiers = com.carriez.rustdesk по-прежнему
+    #     превращается в bundle id. А если get_bundle_id() вернёт None
+    #     (запуск не из бандла), цепочка com.carriez -> ORG, затем
+    #     rustdesk -> dugadesk даст тот же pw.duga.dugadesk — то есть
+    #     правка ещё и чинит апстримовский пробел в этой ветке.
+    R.append(Sub("src/platform/macos.rs",
+                 "    s = s.replace(\"rustdesk\", &crate::get_app_name().to_lowercase());\n"
+                 "    s = s.replace(\"RustDesk\", &crate::get_app_name());\n",
+                 "    // РЕБРЕНДИНГ %s: имена LaunchDaemon/LaunchAgent и каталог настроек\n"
+                 "    // строятся из ORG (get_full_name() = \"{ORG}.{APP_NAME}\", Config::path()\n"
+                 "    // = ProjectDirs::from(\"\", ORG, APP_NAME)), а не из bundle id.\n"
+                 "    // Апстримовская подстановка меняла только \"RustDesk\", поэтому служба\n"
+                 "    // ставилась как com.carriez.%s_service.plist, а is_installed_daemon()\n"
+                 "    // искала %s.%s_service.plist — и не находила: uninstall_service()\n"
+                 "    // выходил по `return false`, конфиг копировался из чужого каталога.\n"
+                 "    let org = hbb_common::config::ORG.read().unwrap().clone();\n"
+                 "    s = s.replace(\"com.carriez\", &org);\n"
+                 "    s = s.replace(\"rustdesk\", &crate::get_app_name().to_lowercase());\n"
+                 "    s = s.replace(\"RustDesk\", &crate::get_app_name());\n"
+                 % (APP, APP, ORG, APP),
+                 1,
+                 u"Без правки служба macOS ставится как com.carriez.%s_service, "
+                 u"а приложение ищет %s.%s_service: служба числится "
+                 u"неустановленной, из интерфейса не удаляется, а ID и настройки "
+                 u"не переносятся в root-демон (конфиг копируется из "
+                 u"~/Library/Preferences/com.carriez.%s/ вместо "
+                 u"~/Library/Preferences/%s.%s/)." % (APP, ORG, APP, APP, ORG, APP),
+                 S, marker='s = s.replace("com.carriez", &org);',
+                 # marker_wins обязателен: якорь (две строки replace) остаётся
+                 # частью результата, поэтому обычная проверка «якорь исчез ->
+                 # применено» не работает и повторный --apply вставил бы блок
+                 # второй раз.
+                 marker_wins=True))
 
     return R
 

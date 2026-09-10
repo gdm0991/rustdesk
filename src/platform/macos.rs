@@ -307,6 +307,15 @@ fn correct_app_name(s: &str) -> String {
     if let Some(bundleid) = get_bundle_id() {
         s = s.replace("com.carriez.rustdesk", &bundleid);
     }
+    // РЕБРЕНДИНГ DugaDesk: имена LaunchDaemon/LaunchAgent и каталог настроек
+    // строятся из ORG (get_full_name() = "{ORG}.{APP_NAME}", Config::path()
+    // = ProjectDirs::from("", ORG, APP_NAME)), а не из bundle id.
+    // Апстримовская подстановка меняла только "RustDesk", поэтому служба
+    // ставилась как com.carriez.DugaDesk_service.plist, а is_installed_daemon()
+    // искала pw.duga.DugaDesk_service.plist — и не находила: uninstall_service()
+    // выходил по `return false`, конфиг копировался из чужого каталога.
+    let org = hbb_common::config::ORG.read().unwrap().clone();
+    s = s.replace("com.carriez", &org);
     s = s.replace("rustdesk", &crate::get_app_name().to_lowercase());
     s = s.replace("RustDesk", &crate::get_app_name());
     s

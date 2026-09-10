@@ -6,19 +6,19 @@
 
 > ## Что подтверждено сборкой, а что ещё нет
 >
-> Прогон #63 (коммит `baa5dbc`): **собрались** Android (3 APK, подписаны),
-> Linux deb обеих архитектур, macOS arm64 — имена артефактов верные.
-> **Windows упал** на обеих архитектурах: шаг применения слоя умер с
-> `UnicodeEncodeError` — на windows-раннере stdout Python по умолчанию cp1252,
-> а весь вывод скрипта русский. Исправлено (см. «Кодировка вывода» ниже),
-> но **повторной сборки Windows ещё не было**.
+> Прогон #64: все 21 артефакт выпущены, приёмка распаковала deb/rpm/apk/msi/
+> dmg/AppImage/flatpak, сверила подписи и хеши иконок. Собирается всё.
 >
-> Не проверялись вживую до сих пор: MSI, macOS x86_64, AppImage, Flatpak, rpm.
+> **Не проверено вживую**: установка службы на macOS после правки
+> `correct_app_name` (раздел 14.12) — это правка Rust-кода, она проверена
+> моделированием подстановки на реальных `privileges_scripts`, но не запуском
+> на живой системе. Также не проверялись после замены иконка строки состояния
+> Android и иконка меню-бара macOS.
 
 ```
 brand/
   brand.toml   параметры продукта (имя, домен, ключ, версия) — единственный источник истины
-  apply.py     применитель: 193 правила, всё по текстовым якорям
+  apply.py     применитель: 201 правило, всё по текстовым якорям
   assets/      иконки бренда
   .gitignore   отменяет корневые правила *png/*svg — иначе иконки молча не коммитятся
   README.md    этот файл
@@ -90,11 +90,23 @@ brand/assets/
   AppIcon.icns        -> flutter/macos/Runner/AppIcon.icns
   scalable.svg        -> res/scalable.svg
   32x32.png 64x64.png 128x128.png 128x128@2x.png  -> res/
+  mac-tray-dark-x2.png  -> res/mac-tray-dark-x2.png    (44x44, читается кодом)
+  mac-tray-light-x2.png -> res/mac-tray-light-x2.png   (44x44, кодом не читается)
   android/mipmap-<dpi>/ic_launcher.png
   android/mipmap-<dpi>/ic_launcher_round.png
   android/mipmap-<dpi>/ic_launcher_foreground.png
+  android/mipmap-<dpi>/ic_stat_logo.png
       <dpi> = mdpi, hdpi, xhdpi, xxhdpi, xxxhdpi
 ```
+
+`mac-tray-dark.png` и `mac-tray-light.png` (22x22) лежат в `brand/assets`, но в
+дерево **не копируются**: файлов с такими именами в репозитории нет и ни одна
+строка кода их не читает. Оставлены на случай, если апстрим когда-нибудь начнёт
+использовать вариант 1x — тогда достаточно добавить две строки в список `ICONS`.
+
+Монохромные иконки (`ic_stat_logo`, `mac-tray-*`) обязаны быть белым силуэтом на
+прозрачном фоне: Android красит `setSmallIcon` сам, macOS в шаблонном режиме
+берёт только альфу. Цветная картинка там превратится в сплошной белый квадрат.
 
 Отдельно правится `flutter/android/app/src/main/res/values/ic_launcher_background.xml`:
 фон адаптивной иконки Android перекрашен из белого `#ffffff` в `#121212`. Без этого
@@ -127,7 +139,7 @@ git check-ignore -v brand/assets/icon.png    # должно молчать
 
 ---
 
-## Что слой меняет (14 разделов, 193 правила)
+## Что слой меняет (14 разделов, 201 правило)
 
 | Раздел | Файлы | Суть |
 |---|---|---|
@@ -314,6 +326,27 @@ UnicodeEncodeError: 'charmap' codec can't encode characters in position 2-11
 `errors="replace"` выбран сознательно: даже на самом экзотическом терминале скрипт
 доработает и вернёт честный код возврата. Молчать нельзя — без вывода не видно,
 какие якоря не нашлись.
+
+---
+
+## Имена службы на macOS (раздел 14.12)
+
+Имена LaunchDaemon/LaunchAgent и каталог настроек строятся **из ORG**, а не из
+bundle id — это разные вещи, и путать их дорого:
+
+| Что | Откуда берётся | Значение у нас |
+|---|---|---|
+| `/Library/LaunchDaemons/…_service.plist` | `get_full_name()` = `{ORG}.{APP_NAME}` | `pw.duga.DugaDesk_service.plist` |
+| `~/Library/Preferences/…/` | `Config::path()` → `ProjectDirs::from("", ORG, APP_NAME)` | `pw.duga.DugaDesk` |
+| `AssociatedBundleIdentifiers`, разрешения macOS | bundle id из `project.pbxproj` | `pw.duga.dugadesk` |
+
+Апстримовский `correct_app_name()` подменял только `com.carriez.rustdesk`,
+`rustdesk` и `RustDesk`, поэтому в `privileges_scripts` оставалось `com.carriez`:
+служба ставилась как `com.carriez.DugaDesk_service.plist`, а приложение искало
+`pw.duga.DugaDesk_service.plist` — и не находило. Слой добавляет в эту функцию
+подстановку `com.carriez` → `ORG`. Функция вызывается **только** для
+`privileges_scripts` (7 вызовов в `macos.rs`), поэтому правка ничего постороннего
+не задевает и покрывает любые новые скрипты апстрима.
 
 ---
 
